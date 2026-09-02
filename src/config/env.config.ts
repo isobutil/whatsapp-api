@@ -112,6 +112,9 @@ export type QrCodLimit = number;
 
 export type EnvProxy = { WS?: string; FETCH?: string };
 
+export type AntiBanPreset = 'conservative' | 'moderate' | 'aggressive' | 'high-volume';
+export type AntiBanEnv = { ENABLED: boolean; PRESET: AntiBanPreset };
+
 export interface Env {
   SERVER: HttpServer;
   STORE: StoreConf;
@@ -130,6 +133,7 @@ export interface Env {
   WA_VERSION: string;
   PROXY: EnvProxy;
   BAILEYS_LOG_LEVEL: LogLevel;
+  ANTIBAN: AntiBanEnv;
 }
 
 export type Key = keyof Env;
@@ -253,6 +257,10 @@ export class ConfigService {
       },
       PRODUCTION: process.env?.NODE_ENV === 'production',
       BAILEYS_LOG_LEVEL: (process.env?.BAILEYS_LOG_LEVEL ?? 'error') as LogLevel,
+      ANTIBAN: {
+        ENABLED: process.env?.ANTIBAN_ENABLED !== 'false',
+        PRESET: (process.env?.ANTIBAN_PRESET as AntiBanPreset) || 'conservative',
+      },
     };
   }
 }

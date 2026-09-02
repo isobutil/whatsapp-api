@@ -73,6 +73,7 @@ import makeWASocket, {
   WAMessageUpdate,
   WASocket,
 } from '@whiskeysockets/baileys';
+import { wrapSocket, type HealthStatus } from 'baileys-antiban';
 import {
   ConfigService,
   ConfigSessionPhone,
@@ -82,6 +83,7 @@ import {
   ProviderSession,
   EnvProxy,
   LogLevel,
+  AntiBanEnv,
 } from '../../config/env.config';
 import { Logger } from '../../config/logger.config';
 import { INSTANCE_DIR, ROOT_DIR } from '../../config/path.config';
@@ -216,6 +218,8 @@ export class WAStartupService {
   private authState: Partial<AuthState> = {};
   private authStateProvider: AuthStateProvider;
   private phoneNumber: string;
+  private antibanCheckInterval: NodeJS.Timeout | null = null;
+  private lastLowDeliveryAlertAt = 0;
 
   public async setPhoneNumber(v: string) {
     this.phoneNumber = v;
@@ -475,6 +479,11 @@ export class WAStartupService {
     }
 
     if (connection === 'close') {
+      if (this.antibanCheckInterval) {
+        clearInterval(this.antibanCheckInterval);
+        this.antibanCheckInterval = null;
+      }
+
       const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== 401;
       if (shouldReconnect) {
         await this.connectToWhatsapp();
@@ -508,6 +517,14 @@ export class WAStartupService {
         .catch((err) => this.logger.error(err));
 
       this.logger.info('instance started');
+
+      if (this.antibanCheckInterval) {
+        clearInterval(this.antibanCheckInterval);
+      }
+      this.antibanCheckInterval = setInterval(
+        () => this.checkAntibanDeliveryRate(),
+        15 * 60 * 1000,
+      );
     }
   }
 
@@ -591,7 +608,50 @@ export class WAStartupService {
       transactionOpts: { maxCommitRetries: 5, delayBetweenTriesMs: 50 },
     };
 
-    return makeWASocket(socketConfig);
+    const sock = makeWASocket(socketConfig);
+
+    const antiban = this.configService.get<AntiBanEnv>('ANTIBAN');
+    if (!antiban.ENABLED) {
+      return sock;
+    }
+
+    return wrapSocket(sock, {
+      preset: antiban.PRESET,
+      persist: join(INSTANCE_DIR, this.instance.name, 'antiban-state.json'),
+      onAtRisk: (status: HealthStatus) => {
+        this.sendDataWebhook('antibanAlert', {
+          type: 'at-risk',
+          ...status,
+        }).catch((error) => this.logger.error(error));
+      },
+    });
+  }
+
+  private checkAntibanDeliveryRate() {
+    const antiban = (this.client as any)?.antiban;
+    if (!antiban) {
+      return;
+    }
+
+    const stats = antiban.getStats();
+    const rate = stats.deliveryTracker?.deliveryRate;
+    if (rate === null || rate === undefined || rate >= 0.6) {
+      return;
+    }
+
+    const ALERT_DEBOUNCE_MS = 30 * 60 * 1000;
+    if (Date.now() - this.lastLowDeliveryAlertAt < ALERT_DEBOUNCE_MS) {
+      return;
+    }
+    this.lastLowDeliveryAlertAt = Date.now();
+
+    this.sendDataWebhook('antibanAlert', {
+      type: 'low-delivery-rate',
+      deliveryRate: rate,
+      sentInWindow: stats.deliveryTracker.sentInWindow,
+      deliveredInWindow: stats.deliveryTracker.deliveredInWindow,
+      health: stats.health,
+    }).catch((error) => this.logger.error(error));
   }
 
   public async reloadConnection(): Promise<WASocket> {

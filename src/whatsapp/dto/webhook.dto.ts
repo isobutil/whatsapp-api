@@ -61,6 +61,7 @@ export class WebhookEvents {
   callUpsert?: boolean;
   labelsAssociation?: boolean;
   labelsEdit?: boolean;
+  antibanAlert?: boolean;
 }
 
 export type EventsType =
@@ -85,7 +86,8 @@ export type EventsType =
   | 'refresh.token'
   | 'call.upsert'
   | 'labels.association'
-  | 'labels.edit';
+  | 'labels.edit'
+  | 'antiban.alert';
 
 export type WebhookEventsType = keyof WebhookEvents;
 
@@ -112,6 +114,7 @@ export const WebhookEventsEnum: Record<WebhookEventsType, EventsType> = {
   callUpsert: 'call.upsert',
   labelsAssociation: 'labels.association',
   labelsEdit: 'labels.edit',
+  antibanAlert: 'antiban.alert',
 };
 
 export const ListEvents: EventsType[] = Object.values(WebhookEventsEnum);

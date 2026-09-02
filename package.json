@@ -49,6 +49,7 @@
     "@prisma/client": "^7.8.0",
     "@whiskeysockets/baileys": "^7.0.0-rc13",
     "axios": "^1.15.2",
+    "baileys-antiban": "^4.10.0",
     "class-validator": "^0.15.1",
     "cross-env": "^10.1.0",
     "dayjs": "^1.11.20",
