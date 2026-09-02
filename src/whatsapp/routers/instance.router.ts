@@ -45,7 +45,7 @@ import { dataValidate, routerPath } from '../../validate/router.validate';
 export function InstanceRouter(
   instanceController: InstanceController,
   ...guards: RequestHandler[]
-) {
+): import("express").Router {
   const router = Router()
     .post('/create', ...guards, async (req, res) => {
       const response = await dataValidate<InstanceDto>({

@@ -73,7 +73,7 @@ import { pipeline } from 'node:stream';
 
 const pipelineAsync = promisify(pipeline);
 
-export function ChatRouter(chatController: ChatController, ...guards: RequestHandler[]) {
+export function ChatRouter(chatController: ChatController, ...guards: RequestHandler[]): import("express").Router {
   const router = Router()
     .post(routerPath('whatsappNumbers'), ...guards, async (req, res) => {
       const response = await dataValidate<WhatsAppNumberDto>({

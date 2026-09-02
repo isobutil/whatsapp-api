@@ -56,7 +56,7 @@ const queryParams = new URLSearchParams({
   version: pkg.version,
 });
 
-export const docsRouter = router.use(
+export const docsRouter: import("express").Router = router.use(
   '/docs',
   serve,
   setup(json, {
