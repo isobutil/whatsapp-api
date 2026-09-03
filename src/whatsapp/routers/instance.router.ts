@@ -80,6 +80,15 @@ export function InstanceRouter(
 
       res.status(HttpStatus.OK).json(response);
     })
+    .get(routerPath('antibanStatus'), ...guards, async (req, res) => {
+      const response = await dataValidate<InstanceDto>({
+        request: req,
+        schema: instanceNameSchema,
+        execute: (instance) => instanceController.antibanStatus(instance),
+      });
+
+      res.status(HttpStatus.OK).json(response);
+    })
     .get(routerPath('fetchInstance'), ...guards, async (req, res) => {
       const response = await dataValidate<InstanceDto>({
         request: req,

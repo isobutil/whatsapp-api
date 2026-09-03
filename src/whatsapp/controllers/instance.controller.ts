@@ -234,6 +234,14 @@ export class InstanceController {
     return this.waMonitor.waInstances.get(instanceName).getInstance().status;
   }
 
+  public async antibanStatus({ instanceName }: InstanceDto) {
+    const instance = this.waMonitor.waInstances.get(instanceName);
+    if (!instance) {
+      throw new NotFoundException(`The "${instanceName}" instance does not exist`);
+    }
+    return instance.getAntibanStatus();
+  }
+
   public async fetchInstance({ instanceName }: InstanceDto) {
     try {
       const instance = (await this.instanceService.fetchInstance(instanceName))[0];

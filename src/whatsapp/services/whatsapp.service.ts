@@ -654,6 +654,20 @@ export class WAStartupService {
     }).catch((error) => this.logger.error(error));
   }
 
+  public getAntibanStatus() {
+    const antiban = this.configService.get<AntiBanEnv>('ANTIBAN');
+    if (!antiban.ENABLED) {
+      return { enabled: false };
+    }
+
+    const stats = (this.client as any)?.antiban?.getStats?.();
+    if (!stats) {
+      return { enabled: true, ready: false };
+    }
+
+    return { enabled: true, ready: true, ...stats };
+  }
+
   public async reloadConnection(): Promise<WASocket> {
     try {
       await new Promise((resolve) => {
