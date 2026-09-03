@@ -38,7 +38,6 @@
 
 import pino from 'pino';
 import { ConfigService, Log } from './env.config';
-import { join } from 'node:path';
 
 export class Logger {
   constructor(
@@ -48,27 +47,21 @@ export class Logger {
     this.logger = pino({
       level: configService.get<Log>('LOG').LEVEL,
       timestamp: pino.stdTimeFunctions.isoTime,
-      transport:
-        configService.get<boolean>('PRODUCTION')
-          ? {
-              target: 'pino/file',
-              options: {
-                destination: join(process.cwd(), 'logs', 'record'),
-                mkdir: true,
-                append: true,
-                sync: false,
-              },
-            }
-          : {
-              target: 'pino-pretty',
-              options: {
-                colorize: configService.get<Log>('LOG').COLOR,
-                translateTime: 'SYS:standard',
-                levelFirst: true,
-                singleLine: true,
-                ignore: 'pid,hostname',
-              },
+      // Always write to stdout. In production this is plain JSON (no
+      // transport) so log level filtering keeps working and an external
+      // collector (docker logs, PM2, Dokploy) handles persistence.
+      transport: configService.get<boolean>('PRODUCTION')
+        ? undefined
+        : {
+            target: 'pino-pretty',
+            options: {
+              colorize: configService.get<Log>('LOG').COLOR,
+              translateTime: 'SYS:standard',
+              levelFirst: true,
+              singleLine: true,
+              ignore: 'pid,hostname',
             },
+          },
     });
   }
 
