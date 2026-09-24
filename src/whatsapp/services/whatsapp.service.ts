@@ -1143,6 +1143,11 @@ export class WAStartupService {
         this.ws.send(this.instance.name, 'messages.upsert', messageRaw);
         await this.sendDataWebhook('messagesUpsert', messageRaw);
 
+        this.logger.info(
+          `${messageRaw.keyFromMe ? 'sent to' : 'received from'} ${
+            messageRaw.pushName || messageRaw.keyRemoteJid
+          } [${messageType}]`,
+        );
         this.logger.trace(`type[${type}] - received`, messageRaw);
       }
     },

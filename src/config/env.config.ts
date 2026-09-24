@@ -203,7 +203,7 @@ export class ConfigService {
         PREFIX: process.env?.PROVIDER_PREFIX,
       },
       LOG: {
-        LEVEL: (process.env?.LOG_LEVEL?.toLowerCase() as LogLevel) ?? 'debug',
+        LEVEL: (process.env?.LOG_LEVEL?.toLowerCase() as LogLevel) ?? 'trace',
         COLOR: process.env?.LOG_COLOR === 'true',
       },
       INSTANCE_EXPIRATION_TIME:

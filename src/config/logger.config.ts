@@ -36,25 +36,36 @@
  * └──────────────────────────────────────────────────────────────────────────────┘
  */
 
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import pino from 'pino';
 import { ConfigService, Log } from './env.config';
+import { ROOT_DIR } from './path.config';
+
+const LOG_DIR = join(ROOT_DIR, 'logs');
+if (!existsSync(LOG_DIR)) {
+  mkdirSync(LOG_DIR, { recursive: true });
+}
 
 export class Logger {
   constructor(
     private readonly configService: ConfigService,
     private readonly context = 'Logger',
   ) {
+    const level = configService.get<Log>('LOG').LEVEL;
+
     this.logger = pino({
-      level: configService.get<Log>('LOG').LEVEL,
+      level,
       timestamp: pino.stdTimeFunctions.isoTime,
-      // Always write to stdout. In production this is plain JSON (no
-      // transport) so log level filtering keeps working and an external
-      // collector (docker logs, PM2, Dokploy) handles persistence.
-      transport: configService.get<boolean>('PRODUCTION')
-        ? undefined
-        : {
+      // Write everything to stdout (human-readable) AND to a file on disk,
+      // so `docker logs` shows the live flow while the file survives it.
+      transport: {
+        targets: [
+          {
             target: 'pino-pretty',
+            level,
             options: {
+              destination: 1,
               colorize: configService.get<Log>('LOG').COLOR,
               translateTime: 'SYS:standard',
               levelFirst: true,
@@ -62,6 +73,13 @@ export class Logger {
               ignore: 'pid,hostname',
             },
           },
+          {
+            target: 'pino/file',
+            level,
+            options: { destination: join(LOG_DIR, 'app.log'), mkdir: true },
+          },
+        ],
+      },
     });
   }
 
