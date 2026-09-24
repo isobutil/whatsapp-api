@@ -1,5 +1,8 @@
 ### BASE IMAGE
-FROM node:24-bullseye-slim AS base
+FROM node:24-bookworm-slim AS base
+
+# openssl: needed by prisma migrate engine at runtime (deploy_db.sh)
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
 ### BUILD IMAGE
 FROM base AS builder
