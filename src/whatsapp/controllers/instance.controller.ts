@@ -38,7 +38,7 @@
  * └──────────────────────────────────────────────────────────────────────────────┘
  */
 
-import { delay } from '@whiskeysockets/baileys';
+import { ConnectionState, delay } from '@whiskeysockets/baileys';
 import EventEmitter2 from 'eventemitter2';
 import { ConfigService } from '../../config/env.config';
 import {
@@ -86,8 +86,8 @@ export class InstanceController {
 
   public async reloadConnection({ instanceName }: InstanceDto) {
     try {
-      const instance = this.waMonitor.waInstances[instanceName];
-      const state = instance?.connectionStatus?.state;
+      const instance = this.waMonitor.waInstances.get(instanceName);
+      const state = instance?.getInstance().status?.state;
 
       switch (state) {
         case 'open':
@@ -134,12 +134,22 @@ export class InstanceController {
       }
 
       switch (state) {
-        case 'close':
+        case 'close': {
           await instance.connectToWhatsapp();
-          this.eventEmitter.once('qrcode.updated', (data: any) => {
-            res.status(HttpStatus.OK).json(data);
-          });
+          // respond with the QR, or with the status if the saved session reconnects without one
+          const onQr = (data: any) => {
+            if (!res.headersSent) res.status(HttpStatus.OK).json(data);
+          };
+          const onUpdate = ({ connection }: Partial<ConnectionState>) => {
+            if (connection !== 'open') return;
+            instance.client.ev.off('connection.update', onUpdate);
+            this.eventEmitter.off('qrcode.updated', onQr);
+            if (!res.headersSent) res.status(HttpStatus.OK).json(instance.getInstance().status);
+          };
+          this.eventEmitter.once('qrcode.updated', onQr);
+          instance.client.ev.on('connection.update', onUpdate);
           break;
+        }
         case 'connecting':
           res.status(HttpStatus.OK).json(instance.qrCode);
           break;

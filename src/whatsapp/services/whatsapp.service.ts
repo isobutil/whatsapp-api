@@ -484,9 +484,23 @@ export class WAStartupService {
         this.antibanCheckInterval = null;
       }
 
+      this.instance.connectionStatus = 'OFFLINE';
+      this.repository.instance
+        .update({
+          where: { id: this.instance.id },
+          data: { connectionStatus: this.instance.connectionStatus },
+        })
+        .catch((err) => this.logger.error(err));
+
       const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== 401;
       if (shouldReconnect) {
-        await this.connectToWhatsapp();
+        // ponytail: fixed 10s retry forever, add backoff/max attempts if it spams logs
+        const reconnect = () =>
+          this.connectToWhatsapp().catch(() => {
+            this.logger.warn('reconnect failed, retrying in 10s');
+            setTimeout(reconnect, 10_000);
+          });
+        await reconnect();
       } else {
         this.sendDataWebhook('statusInstance', {
           instance: this.instance.name,
@@ -1577,6 +1591,8 @@ export class WAStartupService {
       }
 
       messageSent['externalAttributes'] = options?.externalAttributes;
+
+      this.logger.info(`sent to ${messageSent.keyRemoteJid} [${messageSent.messageType}]`);
 
       this.ws.send(this.instance.name, 'send.message', messageSent);
       this.ws.send(this.instance.name, 'messages.upsert', messageSent);
