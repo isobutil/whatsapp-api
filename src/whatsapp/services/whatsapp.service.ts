@@ -546,8 +546,8 @@ export class WAStartupService {
   }
 
   /**
-   * Same scheme as Baileys' decryptPollVote, with use case 'Message Edit'.
-   * Needs the original message's messageSecret, saved in content on receipt.
+   * Same scheme as Baileys' decryptPollVote, with use case 'Message Edit' and empty AAD.
+   * The edit carries the original's messageSecret; fall back to the one saved in content.
    */
   private async decryptMessageEdit(received: WAMessage) {
     const enc = received.message.secretEncryptedMessage;
@@ -555,12 +555,16 @@ export class WAStartupService {
       return;
     }
     const targetId = enc.targetMessageKey?.id;
-    const original = await this.repository.message.findFirst({
-      where: { instanceId: this.instance.id, keyId: targetId },
-    });
-    const secret = original?.content?.['messageSecret'];
+    let secret: Uint8Array = received.message.messageContextInfo?.messageSecret;
     if (!secret) {
-      this.logger.warn(`edit of ${targetId}: original message or messageSecret not found`);
+      const original = await this.repository.message.findFirst({
+        where: { instanceId: this.instance.id, keyId: targetId },
+      });
+      const saved = original?.content?.['messageSecret'];
+      secret = saved && Buffer.from(saved, 'base64');
+    }
+    if (!secret) {
+      this.logger.warn(`edit of ${targetId}: messageSecret not found`);
       return;
     }
 
@@ -572,20 +576,25 @@ export class WAStartupService {
         ? [key.participant, key.participantAlt]
         : [key.remoteJid, key.remoteJidAlt];
 
-    const key0 = hmacSign(Buffer.from(secret, 'base64'), new Uint8Array(32), 'sha256');
+    const key0 = hmacSign(secret, new Uint8Array(32), 'sha256');
     for (const jid of candidates.filter(Boolean).map(jidNormalizedUser)) {
+      const sign = Buffer.concat([
+        Buffer.from(targetId),
+        Buffer.from(jid),
+        Buffer.from(jid),
+        Buffer.from('Message Edit'),
+        new Uint8Array([1]),
+      ]);
       try {
-        const sign = Buffer.concat([
-          Buffer.from(targetId),
-          Buffer.from(jid),
-          Buffer.from(jid),
-          Buffer.from('Message Edit'),
-          new Uint8Array([1]),
-        ]);
-        const decKey = hmacSign(sign, key0, 'sha256');
-        const aad = Buffer.from(`${targetId}\u0000${jid}`);
-        const decrypted = aesDecryptGCM(enc.encPayload, decKey, enc.encIv, aad);
-        return proto.Message.decode(decrypted).toJSON();
+        const decrypted = aesDecryptGCM(
+          enc.encPayload,
+          hmacSign(sign, key0, 'sha256'),
+          enc.encIv,
+          Buffer.alloc(0),
+        );
+        // decrypts to { protocolMessage: { type: MESSAGE_EDIT, editedMessage } }
+        const m = proto.Message.decode(decrypted).toJSON();
+        return m.protocolMessage?.editedMessage ?? m;
       } catch {
         // wrong jid form, try next
       }
