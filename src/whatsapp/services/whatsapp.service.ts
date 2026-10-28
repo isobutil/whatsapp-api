@@ -50,8 +50,11 @@ import makeWASocket, {
   DisconnectReason,
   downloadMediaMessage,
   generateWAMessageFromContent,
+  aesDecryptGCM,
   getContentType,
   getDevice,
+  hmacSign,
+  jidNormalizedUser,
   GroupMetadata,
   GroupParticipant,
   isJidGroup,
@@ -540,6 +543,54 @@ export class WAStartupService {
         15 * 60 * 1000,
       );
     }
+  }
+
+  /**
+   * Same scheme as Baileys' decryptPollVote, with use case 'Message Edit'.
+   * Needs the original message's messageSecret, saved in content on receipt.
+   */
+  private async decryptMessageEdit(received: WAMessage) {
+    const enc = received.message.secretEncryptedMessage;
+    if (enc?.secretEncType !== proto.Message.SecretEncryptedMessage.SecretEncType.MESSAGE_EDIT) {
+      return;
+    }
+    const targetId = enc.targetMessageKey?.id;
+    const original = await this.repository.message.findFirst({
+      where: { instanceId: this.instance.id, keyId: targetId },
+    });
+    const secret = original?.content?.['messageSecret'];
+    if (!secret) {
+      this.logger.warn(`edit of ${targetId}: original message or messageSecret not found`);
+      return;
+    }
+
+    // only the author can edit, so original sender == edit sender; try lid and pn forms
+    const { key } = received;
+    const candidates = key.fromMe
+      ? [this.client.user?.lid, this.client.user?.id]
+      : isJidGroup(key.remoteJid)
+        ? [key.participant, key.participantAlt]
+        : [key.remoteJid, key.remoteJidAlt];
+
+    const key0 = hmacSign(Buffer.from(secret, 'base64'), new Uint8Array(32), 'sha256');
+    for (const jid of candidates.filter(Boolean).map(jidNormalizedUser)) {
+      try {
+        const sign = Buffer.concat([
+          Buffer.from(targetId),
+          Buffer.from(jid),
+          Buffer.from(jid),
+          Buffer.from('Message Edit'),
+          new Uint8Array([1]),
+        ]);
+        const decKey = hmacSign(sign, key0, 'sha256');
+        const aad = Buffer.from(`${targetId}\u0000${jid}`);
+        const decrypted = aesDecryptGCM(enc.encPayload, decKey, enc.encIv, aad);
+        return proto.Message.decode(decrypted).toJSON();
+      } catch {
+        // wrong jid form, try next
+      }
+    }
+    this.logger.warn(`edit of ${targetId}: decryption failed`);
   }
 
   private async getMessage(key: PrismType.Message, full = false) {
@@ -1079,6 +1130,19 @@ export class WAStartupService {
           })(),
           isGroup: isJidGroup(received.key.remoteJid),
         } as PrismType.Message;
+
+        // needed later to decrypt edits (secretEncryptedMessage) of this message
+        const messageSecret = received.message.messageContextInfo?.messageSecret;
+        if (messageSecret && messageRaw.content) {
+          messageRaw.content['messageSecret'] = Buffer.from(messageSecret).toString('base64');
+        }
+
+        if (messageType === 'secretEncryptedMessage') {
+          const editedMessage = await this.decryptMessageEdit(received);
+          if (editedMessage) {
+            messageRaw.content['editedMessage'] = editedMessage;
+          }
+        }
 
         if (this.databaseOptions.DB_OPTIONS.NEW_MESSAGE) {
           const { id } = await this.repository.message.create({ data: messageRaw });
